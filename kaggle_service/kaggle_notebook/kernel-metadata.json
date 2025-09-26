@@ -1,0 +1,10 @@
+{
+  "id": "ryanburnsworth/my-notebook-test",
+  "title": "my-notebook-test",
+  "code_file": "my_notebook.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false
+}
