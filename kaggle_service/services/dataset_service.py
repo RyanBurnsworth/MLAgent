@@ -60,8 +60,7 @@ class DatasetService:
 
             print(f"Datasets downloaded: {datasets} ")
         
-            # return the dataset name and a list of dataset dataset file names
-            return {"dataset_name": dataset_name, "datasets": datasets}
+            return self.get_dataset_details(dataset_name, datasets)
         except subprocess.CalledProcessError as e:
             print("An error occurred while downloading the dataset:", e)
             return None
@@ -72,27 +71,25 @@ class DatasetService:
     Get detailed information about the dataset including title, description, datasets, headers, and top 25 rows
     
     """
-    def get_dataset_details(self, dataset_name, training_data_filename):
+    def get_dataset_details(self, dataset_name, datasets):
         try:
             # extract the dataset details
             data = self.get_dataset_manifest(dataset_name)
 
-            datasets_path = Path(self.workdir) / dataset_name
-            datasets_paths = self.list_datasets(Path(datasets_path))
-
-            # get the dataset names without the .csv extension
-            datasets = [p.stem for p in datasets_paths]
-
-            headers = self.get_headers(dataset_name, training_data_filename)
-            top25 = self.get_top_25_rows(dataset_name, training_data_filename)
+            # build the full paths to each dataset file
+            dataset_paths = []
+            for dataset in datasets:
+                dataset_path = self.workdir / dataset_name / f"{dataset}.csv"
+                dataset_path = f".\\{dataset_path}"
+                if dataset_path:
+                    dataset_paths.append(dataset_path)
 
             record = {
+                "dataset_name": dataset_name,
                 "title": data.get("title", ""),
                 "subtitle": data.get("subtitle", ""),
                 "description": data.get("description", ""),
-                "datasets": datasets,
-                "headers": headers,
-                "top25": top25
+                "datasets": dataset_paths
             }
 
             print(f"Dataset details: {record}")
@@ -128,35 +125,6 @@ class DatasetService:
             return None
         except Exception as e:
             print("An error occurred while getting dataset manifest:", e)
-            raise e
-
-
-    """
-    
-    Get the headers of the dataset as a list of strings
-    
-    """
-    def get_headers(self, dataset_name, training_data_filename):
-        try:
-            df = self.read_csv(dataset_name, training_data_filename)
-            return df.columns.tolist()
-        except Exception as e:
-            print("An error occurred while getting headers:", e)
-            raise e
-
-
-    """
-    
-    Get the top 25 rows of the dataset as a CSV string
-
-    """
-    def get_top_25_rows(self, dataset_name, training_data_filename):
-        try:
-            df = self.read_csv(dataset_name, training_data_filename)
-
-            return df.head(25).to_csv(index=False, header=False)
-        except Exception as e:
-            print("An error occurred while getting top 25 rows:", e)
             raise e
 
 
