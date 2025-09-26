@@ -15,7 +15,7 @@ class DatasetService:
 
     """
     
-    Download the dataset matching the search term to the specified path
+    Download the hottest dataset using the search term
     
     """
     def download_dataset(self, search_term):

@@ -17,7 +17,7 @@ class NotebookService:
         self.NOTEBOOK_NAME = notebook_name
         self.NOTEBOOK_FILE = f"{notebook_name}.ipynb"
         self.WORKDIR = Path(f"./kaggle_notebook_{notebook_name}")
-        self.METADATA_PATH = Path(self.WORKDIR + "/kernel-metadata.json")
+        self.METADATA_PATH = self.WORKDIR / "kernel-metadata.json"
         self.WORKDIR.mkdir(exist_ok=True)
 
         self.create_metadata()
