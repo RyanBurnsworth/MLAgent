@@ -11,6 +11,7 @@ class NotebookService:
     WORKDIR = ""
     METADATA_PATH = ""
 
+
     def __init__(self, username, notebook_name):
         self.USERNAME = username
         self.NOTEBOOK_NAME = notebook_name
@@ -20,6 +21,7 @@ class NotebookService:
         self.WORKDIR.mkdir(exist_ok=True)
 
         self.create_metadata()
+
 
     """
     
@@ -38,9 +40,14 @@ class NotebookService:
             "enable_internet": False
         }
         
-        with open(self.METADATA_PATH, "w") as f:
-            json.dump(kernel_metadata, f, indent=2)
-        print(f"Created metadata at {self.METADATA_PATH}")
+        try:
+            with open(self.METADATA_PATH, "w") as f:
+                json.dump(kernel_metadata, f, indent=2)
+            print(f"Created metadata at {self.METADATA_PATH}")
+        except Exception as e:
+            print("An error occurred while creating metadata:", e)
+            return None
+
 
     """
 
@@ -50,10 +57,15 @@ class NotebookService:
     def create_notebook(self, notebook_content):
         notebook_path = self.WORKDIR / self.NOTEBOOK_FILE
 
-        with open(notebook_path, "w") as f:
-            json.dump(notebook_content, f, indent=2)
-        
-        print(f"Created notebook at {notebook_path}")
+        try:
+            with open(notebook_path, "w") as f:
+                json.dump(notebook_content, f, indent=2)
+            
+            print(f"Created notebook at {notebook_path}")
+        except Exception as e:
+            print("An error occurred while creating the notebook:", e)
+            return None
+
 
     """
     
@@ -92,4 +104,4 @@ class NotebookService:
             print("Pushed notebook to Kaggle.") 
         except subprocess.CalledProcessError as e:
             print("An error occurred while pushing to Kaggle:", e)
-            return ""
+            return None
