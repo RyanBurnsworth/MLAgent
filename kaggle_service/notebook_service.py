@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-class KaggleService:
+class NotebookService:
 
     USERNAME = "" 
     NOTEBOOK_NAME = ""
