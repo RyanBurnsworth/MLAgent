@@ -2,19 +2,12 @@ import shutil
 import time
 import json
 import subprocess
-import urllib
 import nbformat
 import papermill as pm
 from pathlib import Path
+import ast
 
 class NotebookService:
-
-    USERNAME = "" 
-    NOTEBOOK_NAME = ""
-    NOTEBOOK_FILE = ""
-    WORKDIR = ""
-    METADATA_PATH = ""
-
 
     def __init__(self, username, notebook_name):
         self.USERNAME = username
@@ -30,46 +23,39 @@ class NotebookService:
     Create a new notebook or append a new cell to the existing notebook
 
     """
-    def create_or_append_notebook(self, cell):
+    def create_or_append_notebook(self, notebook_data):
         notebook_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb"
         backup_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-backup.ipynb"
         
         notebook = self.read_notebook(self.NOTEBOOK_NAME)
         if notebook is None:
             print("No existing notebook found. A new one will be created.")
-            return False
 
-        cell_str = urllib.parse.unquote(cell)
-        cell = json.loads(cell_str)
-
-        if notebook is not None:
+            # Create new notebook from full JSON content
+            notebook = notebook_data
+            is_write_complete = self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
+            if is_write_complete is Exception:
+                print("Failed to write to notebook.")
+                return is_write_complete
+            
+            print(f"Created new notebook {self.NOTEBOOK_NAME}")
+        else:
             notebook = notebook
 
             # Backup before modifying
             shutil.copy(notebook_path, backup_path)
             print(f"Backup created at {backup_path}")
 
-            # Append a cell (cell must be parsed from JSON string to dict if needed)
-            notebook["cells"].append(cell)
+            # Append the notebook data
+            notebook["cells"].append(notebook_data)
             is_write_complete = self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
-            if not is_write_complete:
+            if is_write_complete is Exception:
                 print("Failed to write to notebook.")
-                return False
+                return is_write_complete
             
             print(f"Appended cell to notebook {self.NOTEBOOK_NAME}")
             
-            return True
-        else:
-            # Create new notebook from full JSON content
-            notebook = cell
-            is_write_complete = self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
-            if not is_write_complete:
-                print("Failed to write to notebook.")
-                return False
-            
-            print(f"Created new notebook {self.NOTEBOOK_NAME}")
-            
-            return True
+        return True
 
     """
     
@@ -96,8 +82,8 @@ class NotebookService:
             print(f"Removed backup at {backup_path}")
 
         last_output = self.get_last_notebook_output(notebook_output_path)
-        if last_output is "":
-            raise Exception("No output found in the executed notebook.")
+        if last_output == "":
+            raise Exception("Executed notebook has no output.")
 
         return last_output
 
@@ -111,7 +97,7 @@ class NotebookService:
         metadata_created = self.create_metadata()
         if not metadata_created:
             print("Failed to create metadata. Cannot push to Kaggle.")
-            return None
+            raise Exception("Failed to create metadata. Cannot push to Kaggle.")
         
         try:
             subprocess.run(["kaggle", "kernels", "push", "-p", str(self.WORKDIR)], check=True)
@@ -144,7 +130,7 @@ class NotebookService:
             print("Pushed notebook to Kaggle.") 
         except subprocess.CalledProcessError as e:
             print("An error occurred while pushing to Kaggle:", e)
-            return None
+            return e
 
 
     """
@@ -182,7 +168,7 @@ class NotebookService:
             return True
         except Exception as e:
             print("An error occurred while writing to the notebook:", e)
-            return False
+            return e
 
 
     """
@@ -209,32 +195,34 @@ class NotebookService:
 
     def get_last_notebook_output(self, notebook_output_path):
         try:
-            # Load the executed notebook
             nb = nbformat.read(notebook_output_path, as_version=4)
         except Exception as e:
             print("An error occurred while reading the executed notebook:", e)
-            return ""
+            return None
 
-        # Get the last code cell that has output
         last_output = None
         for cell in reversed(nb.cells):
-            if cell.cell_type == 'code' and 'outputs' in cell and len(cell.outputs) > 0:
-                # Get the last output from the last code cell
+            if cell.cell_type == 'code' and cell.outputs:
                 last_output = cell.outputs[-1]
                 break
 
         if last_output is not None:
-            # If it's a stream output (like print statements)
             if last_output.output_type == 'stream':
                 print(last_output.text)
                 return last_output.text
-            # If it's display data (like matplotlib, pandas HTML)
             elif last_output.output_type in ['display_data', 'execute_result']:
-                print(last_output.data)
-                return last_output.data
+                text = last_output.data.get('text/plain')
+                if text:
+                    try:
+                        # Convert string representation of dict to actual dict
+                        result = ast.literal_eval(text)
+                        return result
+                    except Exception as e:
+                        print("Failed to parse notebook output:", e)
+                        return text
         else:
             print("No output found in the notebook.")
-            return ""
+            return None
 
 
     """

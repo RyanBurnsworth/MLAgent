@@ -2,13 +2,11 @@ import json
 from pathlib import Path
 import subprocess
 
-WORKDIR = Path(f"./datasets")
-
 class DatasetService:
 
 
     def __init__(self):
-        self.workdir = WORKDIR
+        self.workdir = Path(f"./datasets")
         self.workdir.mkdir(exist_ok=True)
 
 
@@ -30,7 +28,7 @@ class DatasetService:
 
             if (output.lower == "no datasets found"):
                 print("No datasets found.")
-                return ""
+                raise Exception("No datasets found.")
 
             lines = output.strip().split("\n")
 
@@ -55,7 +53,7 @@ class DatasetService:
             datasets_paths = self.list_datasets(Path(download_path))
             if datasets_paths is None:
                 print("No datasets found after download.")
-                return None
+                raise Exception("No datasets found after download.")
 
             # get the dataset names without the .csv extension
             datasets = [p.stem for p in datasets_paths]
@@ -65,11 +63,11 @@ class DatasetService:
             dataset_details = self.get_dataset_details(dataset_name, datasets)
             if dataset_details is None:
                 print("Failed to get dataset details.")
-                return None
+                raise Exception("Failed to get dataset details.")
             return dataset_details
         except subprocess.CalledProcessError as e:
             print("An error occurred while downloading the dataset:", e)
-            return None
+            return e
 
 
     """
@@ -83,7 +81,7 @@ class DatasetService:
             data = self.get_dataset_manifest(dataset_name)
             if data is None:
                 print("No manifest data found.")
-                return None
+                raise Exception("No manifest data found.")
 
             # build the full paths to each dataset file
             dataset_paths = []
@@ -106,7 +104,7 @@ class DatasetService:
             return record
         except Exception as e:
             print("An error occurred while getting dataset details:", e)
-            return None
+            return e
 
 
     """
@@ -131,10 +129,10 @@ class DatasetService:
                 data = json.loads(data)
                 return data
             
-            return None
+            raise Exception("Failed to decode dataset manifest.")
         except Exception as e:
             print("An error occurred while getting dataset manifest:", e)
-            return None
+            return e
 
     """
     
@@ -150,4 +148,4 @@ class DatasetService:
             return csv_files
         except Exception as e:
             print("An error occurred while listing datasets:", e)
-            return None
+            return e

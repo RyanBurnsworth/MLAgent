@@ -1,30 +1,75 @@
-import json
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from services.dataset_service import DatasetService
+from services.notebook_service import NotebookService
+from pydantic import BaseModel
 
 app = FastAPI()
 
+class NotebookUpdateRequest(BaseModel):
+    notebook_content: dict
+
+"""
+    Download a dataset from Kaggle by providing a search term.
+"""
 @app.get("/dataset/download/{search_term}")
 def download_dataset(search_term: str):
     dataset_service = DatasetService()
 
-    result = dataset_service.download_dataset(search_term)
-    if result is None:
-        return {"status": "error", "message": "Dataset not found or an error occurred."}
+    try:
+        result = dataset_service.download_dataset(search_term)
+        return result
+    except Exception as e:
+        return {
+            "status": "error", 
+            "message": "Error downloading dataset.", 
+            "details": str(e)
+        }
 
-    return result
-
+"""
+    Create or append to a Kaggle notebook and test it.
+"""
 @app.post("/notebook/update/{notebook_name}")
-def update_notebook(notebook_name: str, notebook_content: str):
-    from services.notebook_service import NotebookService
-    notebook_service = NotebookService("ryanburnsworth", notebook_name)
+def update_notebook(notebook_name: str, request: NotebookUpdateRequest):
+    try:
+        notebook_service = NotebookService("ryanburnsworth", notebook_name)
 
-    is_complete = notebook_service.create_or_append_notebook(notebook_content)
-    if not is_complete:
-        return {"status": "error", "message": "Failed to create or append to notebook."}
+        is_complete = notebook_service.create_or_append_notebook(request.notebook_content)
+        if isinstance(is_complete, Exception):
+            raise is_complete
 
-    result = notebook_service.test_notebook()
-    if result is Exception:
-        return {"status": "error", "message": str(result)}
+        is_tested = notebook_service.test_notebook()
+        if isinstance(is_tested, Exception):
+            raise is_tested
+        
+    except Exception as e:
+        return {
+            "status": "error", 
+            "message": "Error updating or testing notebook.", 
+            "details": str(e)
+        }
+    
+    return {
+        "status": "success", 
+        "message": "",
+        "details": ""
+    }
 
-    return {"status": "success", "message": json.loads(result)}
+
+@app.exception_handler(RequestValidationError)
+async def exception_handler(request: Request, exc: RequestValidationError):
+    print(f"Unhandled exception: {exc}")
+    
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "message": "An unexpected error occurred",
+            "details": str(exc)  
+        },
+    )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
