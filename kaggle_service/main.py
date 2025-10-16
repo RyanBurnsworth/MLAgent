@@ -1,3 +1,4 @@
+from typing import Any, Dict, List
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -7,7 +8,7 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-class NotebookUpdateRequest(BaseModel):
+class CreateNotebookRequest(BaseModel):
     notebook_content: dict
 
 """
@@ -30,17 +31,58 @@ def download_dataset(search_term: str):
             }
         )
 
+
 """
-    Create or append to a Kaggle notebook and test it.
+    Create a notebook and test it.
 """
-@app.post("/notebook/update/{notebook_name}")
-def update_notebook(notebook_name: str, request: NotebookUpdateRequest):
+@app.post("/notebook/create/{notebook_name}")
+def create_notebook(notebook_name: str, request: CreateNotebookRequest):
     statusDetails = ""
 
     try:
         notebook_service = NotebookService("ryanburnsworth", notebook_name)
 
-        is_complete, tb_str = notebook_service.create_or_append_notebook(request.notebook_content)
+        is_complete, tb_str = notebook_service.create_notebook(request.notebook_content)
+        if isinstance(is_complete, Exception):
+            statusDetails = tb_str
+            raise is_complete
+
+        is_success, last_output, tb_str = notebook_service.test_notebook()
+        if is_success is False and isinstance(last_output, Exception):
+            statusDetails = str(tb_str)
+            raise last_output
+
+    except Exception as e:
+        return JSONResponse(
+            status_code = 500,
+            content = {
+                "status": "error", 
+                "message": str(e), 
+                "details": statusDetails
+            }
+        )
+    
+    return JSONResponse(
+        status_code = 200,
+        content = {
+            "status": "success", 
+            "message": "", 
+            "details": ""
+        }
+    )
+
+
+"""
+    Append to an existing notebook and test it.
+"""
+@app.post("/notebook/update/{notebook_name}")
+def update_notebook(notebook_name: str,  cell_contents: List[Dict[str, Any]]):
+    statusDetails = ""
+
+    try:
+        notebook_service = NotebookService("ryanburnsworth", notebook_name)
+
+        is_complete, tb_str = notebook_service.append_cells_to_notebook(cell_contents)
         if isinstance(is_complete, Exception):
             statusDetails = tb_str
             raise is_complete

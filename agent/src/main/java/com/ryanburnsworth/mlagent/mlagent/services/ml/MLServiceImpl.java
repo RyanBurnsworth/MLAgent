@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -26,7 +27,23 @@ public class MLServiceImpl implements MLService {
     }
 
     @Override
-    public StatusResponse generateDataloaderNotebookCells(String notebookName, Map<String, Object> notebookContent) {
+    public StatusResponse createNotebook(String notebookName, Map<String, Object> notebookContent) {
+        try {
+            return webClient.post()
+                    .uri("/notebook/create/" + notebookName)
+                    .body(BodyInserters.fromValue(notebookContent))
+                    .exchangeToMono(clientResponse ->
+                            clientResponse.bodyToMono(StatusResponse.class))
+                    .block();
+        } catch (Exception e) {
+            // TODO: Add error handling
+            System.out.println(e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public StatusResponse updateNotebook(String notebookName, List<Map<String, Object>> notebookContent) {
         try {
             return webClient.post()
                     .uri("/notebook/update/" + notebookName)

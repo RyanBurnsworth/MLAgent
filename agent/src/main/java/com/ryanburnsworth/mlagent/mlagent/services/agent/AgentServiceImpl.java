@@ -14,36 +14,57 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 
-import static com.ryanburnsworth.mlagent.mlagent.util.Prompts.DATA_LOADING_PROMPT;
-import static com.ryanburnsworth.mlagent.mlagent.util.Prompts.ERROR_HANDLING_PROMPT;
+import static com.ryanburnsworth.mlagent.mlagent.util.Prompts.*;
 
 @Service
 public class AgentServiceImpl implements AgentService {
     private static final Logger log = LoggerFactory.getLogger(AgentServiceImpl.class);
     private final ChatClient chatClient;
     private final MLService mlService;
-    private final List<AgentMemory> agentMemories;
+
+    private List<AgentMemory> agentMemories;
 
     private int errorCounter = 0;
 
     AgentServiceImpl(ChatClient.Builder chatClientBuilder, MLService mlService) {
         this.chatClient = chatClientBuilder.build();
         this.mlService = mlService;
-        this.agentMemories = new ArrayList<>();
     }
 
     @Override
     public StatusResponse performAgenticMachineLearning(String searchTerm) {
+        // instantiate new memories for each ML agent
+        this.agentMemories = new ArrayList<>();
+
+        // reset errorCounter
+        this.errorCounter = 0;
+
+        StatusResponse responseStatus;
+
         // download the hottest dataset from Kaggle and it's metadata using a search term
         DatasetResponse datasetResponse = mlService.fetchDatasetMetadata(searchTerm);
 
         // generate the dataset loading notebook cells from the dataset metadata
-        StatusResponse status = this.generateDataLoadingCellsAgent(datasetResponse);
+        StatusResponse dataLoaderStatus = this.generateDataLoadingCellsAgent(datasetResponse);
+        responseStatus = this.handleStatusResponse(dataLoaderStatus);
 
-        return this.handleStatusResponse(status);
+        if (responseStatus == null || responseStatus.getStatus().equals("failed")) {
+            return responseStatus;
+        }
+
+        // generate the preprocessing cells
+        StatusResponse preprocessorStatus = this.generatePreprocessingCellsAgent();
+        responseStatus = this.handleStatusResponse(preprocessorStatus);
+
+        if (responseStatus == null || responseStatus.getStatus().equals("failed")) {
+            return responseStatus;
+        }
+
+        return responseStatus;
     }
 
     private StatusResponse generateDataLoadingCellsAgent(DatasetResponse datasetResponse) {
+        log.info("GenerateDataLoadingCellsAgent: Generating Notebook");
         Prompt prompt = DATA_LOADING_PROMPT.create(
                 Map.of(
                         "title", datasetResponse.getTitle(),
@@ -60,34 +81,92 @@ public class AgentServiceImpl implements AgentService {
                     .call()
                     .content();
 
-            Map<String, Object> payload = handleLLMResponse(prompt.getContents(), notebookContent);
+            // update the agent memory
+            updateAgentMemory(AgentState.GENERATING_DATA_LOADER_CELLS, prompt.getContents(), notebookContent);
+
+            // convert the notebook content into a JSON object
+            Map<String, Object> notebookContentMap = Util.getJsonFromContent(notebookContent);
+
+            // wrap and return the notebook content payload
+            Map<String, Object> payload;
+            payload = Util.getWrappedJsonObject("notebook_content", notebookContentMap);
 
             // TODO: update hardcoded titanic with real notebook name
-            return performWorkflow("titanic", payload);
+            StatusResponse creationStatus = performNotebookCreation("titanic", payload);
+            return this.handleStatusResponse(creationStatus);
 
         } catch (Exception e) {
-            log.error("Error reading notebook content from LLM {}", e.getMessage());
+            log.error("Error reading data loading cells from LLM {}", e.getMessage());
         }
         return null;
+    }
+
+    private StatusResponse generatePreprocessingCellsAgent() {
+        log.info("GeneratePreprocessingCellsAgent: Generating preprocessing cells");
+
+        String memoryContext = Util.formatAgentMemories(agentMemories);
+
+        String prompt = DATA_PREPROCESSING_PROMPT.render(Map.of(
+                "memory", memoryContext
+        ));
+
+        try {
+            // Call LLM
+            String notebookContent = chatClient
+                    .prompt(prompt)
+                    .call()
+                    .content();
+
+            if (notebookContent == null || notebookContent.isBlank()) {
+                log.error("Empty response from LLM during preprocessing cell generation");
+                return StatusResponse.builder()
+                        .status("Failure")
+                        .message("Empty response from LLM")
+                        .details("")
+                        .build();
+            }
+
+            // Store to memory
+            updateAgentMemory(AgentState.PREPROCESSING_DATA, prompt, notebookContent);
+
+            // Wrap under correct contract
+            List<Map<String, Object>> payload = Util.getJsonFromListContent(notebookContent);
+
+            // Pass to workflow
+            StatusResponse updateStatus = performNotebookUpdate("titanic", payload);
+            return this.handleStatusResponse(updateStatus);
+
+        } catch (Exception e) {
+            log.error("Error reading preprocessing cells from LLM", e);
+
+            return StatusResponse.builder()
+                    .status("Failure")
+                    .message("Errpr reading preprocessing cells from LLM")
+                    .details(e.getMessage())
+                    .build();
+        }
     }
 
     private StatusResponse errorHandlerAgent(StatusResponse response) {
         log.info("ErrorHandlerAgent: Attempting to fix errors");
 
+        String lastUserPrompt = agentMemories.get(agentMemories.toArray().length - 1).getUserInput();
+        String lastAgentOutput = agentMemories.get(agentMemories.toArray().length - 1).getAgentOutput();
+
         // allow 3 attempts at error handling before quitting
         errorCounter += 1;
-        if (errorCounter > 3) {
+        if (errorCounter > 5) {
             return StatusResponse.builder()
                     .status("Failure")
-                    .message("Unable to fix errors after 3 attempts")
+                    .message("Agent Output: " + lastAgentOutput)
                     .details(response.getDetails())
                     .build();
         }
 
         Prompt prompt = ERROR_HANDLING_PROMPT.create(
                 Map.of(
-                        "userPrompt", agentMemories.get(agentMemories.toArray().length - 1).getUserInput(),
-                        "aiResponse", agentMemories.get(agentMemories.toArray().length - 1).getAgentOutput(),
+                        "userPrompt", lastUserPrompt,
+                        "aiResponse", lastAgentOutput,
                         "errorMessage", response.getMessage(),
                         "errorDetails", response.getDetails()
                 )
@@ -100,30 +179,53 @@ public class AgentServiceImpl implements AgentService {
                     .call()
                     .content();
 
-            Map<String, Object> payload = handleLLMResponse(prompt.getContents(), content);
+            if (agentMemories.get(agentMemories.toArray().length - 1).getAgentState() == AgentState.GENERATING_DATA_LOADER_CELLS) {
+                // convert the notebook content into a JSON object
+                Map<String, Object> notebookContentMap = Util.getJsonFromContent(content);
 
-            log.info("ErrorHandlerAgent: Received content from LLM: {}", content);
+                // wrap and return the notebook content payload
+                Map<String, Object> payload = Util.getWrappedJsonObject("notebook_content", notebookContentMap);
+                log.info("ErrorHandlerAgent: Received notebook content from LLM: {}", content);
+                StatusResponse creationStatus = performNotebookCreation("titanic", payload);
+                return this.handleStatusResponse(creationStatus);
+            } else {
+                // convert the notebook content into a JSON object
+                List<Map<String, Object>> payload = Util.getJsonFromListContent(content);
 
-            // TODO: update hardcoded titanic with real notebook name
-            StatusResponse isComplete = performWorkflow("titanic", payload);
-            return this.handleStatusResponse(isComplete);
+                // TODO: update hardcoded titanic with real notebook name
+                log.info("ErrorHandlerAgent: Received cell contents from LLM: {}", content);
+                StatusResponse updateStatus = performNotebookUpdate("titanic", payload);
+                return this.handleStatusResponse(updateStatus);
+            }
         } catch (Exception e) {
             log.error("Error reading content from LLM {}", e.getMessage());
         }
         return null;
     }
 
-    private StatusResponse performWorkflow(String name, Map<String, Object> payload) {
+    private StatusResponse performNotebookCreation(String name, Map<String, Object> payload) {
         AgentState currentState = agentMemories.get(agentMemories.toArray().length - 1).getAgentState();
-
-        log.info("Performing workflow on current state: {}", currentState.toString());
-
+        log.info("Performing notebook creation on current state: {}", currentState.toString());
         if (Objects.requireNonNull(currentState) == AgentState.GENERATING_DATA_LOADER_CELLS) {
             log.info("Generating Data Loader Notebook Cells");
-            return this.mlService.generateDataloaderNotebookCells(name, payload);
+            return this.mlService.createNotebook(name, payload);
         }
 
-        return null;
+        return StatusResponse.builder()
+                .status("failed")
+                .build();
+    }
+
+    private StatusResponse performNotebookUpdate(String name, List<Map<String, Object>> payload) {
+        AgentState currentState = agentMemories.get(agentMemories.toArray().length - 1).getAgentState();
+        log.info("Performing notebook update on current state: {}", currentState.toString());
+        if (Objects.requireNonNull(currentState) == AgentState.PREPROCESSING_DATA) {
+            log.info("Generating New Cells");
+            return this.mlService.updateNotebook(name, payload);
+        }
+        return StatusResponse.builder()
+                .status("failed")
+                .build();
     }
 
     private void updateAgentMemory(AgentState state, String userInput, String agentOutput) {
@@ -134,18 +236,6 @@ public class AgentServiceImpl implements AgentService {
                 .build();
 
         this.agentMemories.add(agentMemory);
-    }
-
-    private Map<String, Object> handleLLMResponse(String prompt, String notebookContent) {
-
-        // update the agent memory
-        updateAgentMemory(AgentState.GENERATING_DATA_LOADER_CELLS, prompt, notebookContent);
-
-        // convert the notebook content into a JSON object
-        Map<String, Object> notebookContentMap = Util.getJsonFromContent(notebookContent);
-
-        // wrap and return the notebook content payload
-        return Util.getWrappedJsonObject("notebook_content", notebookContentMap);
     }
 
     private StatusResponse handleStatusResponse(StatusResponse status) {

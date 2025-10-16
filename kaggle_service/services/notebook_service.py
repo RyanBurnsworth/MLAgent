@@ -18,24 +18,15 @@ class NotebookService:
         self.METADATA_PATH = self.WORKDIR / "kernel-metadata.json"
         self.WORKDIR.mkdir(exist_ok=True)
 
+    def create_notebook(self, notebook_content):
+        print("Creating notebook...")
 
-    """
-    
-    Create a new notebook or append a new cell to the existing notebook
-
-    """
-    def create_or_append_notebook(self, notebook_data):
-        print("Creating or appending to notebook...")
-
-        notebook_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb"
-        backup_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-backup.ipynb"
-        
         notebook = self.read_notebook(self.NOTEBOOK_NAME)
         if notebook is None:
             print("No existing notebook found. A new one will be created.")
 
             # Create new notebook from full JSON content
-            notebook = notebook_data
+            notebook = notebook_content
             is_write_complete = self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
             if is_write_complete is Exception:
                 tb_str = traceback.format_exc()
@@ -43,23 +34,39 @@ class NotebookService:
                 return is_write_complete, tb_str
             
             print(f"Created new notebook {self.NOTEBOOK_NAME}")
+            return True, None
         else:
-            notebook = notebook
+            print("Notebook already exists. Use append function to add cells.")
+            raise Exception("Notebook already exists. Use append function to add cells.")
+    
+    """
+    
+    Append new cells to the existing notebook
 
-            # Backup before modifying
-            shutil.copy(notebook_path, backup_path)
-            print(f"Backup created at {backup_path}")
+    """
+    def append_cells_to_notebook(self, cell_contents):
+        print("Appending to notebook...")
 
-            # Append the notebook data
-            notebook["cells"].append(notebook_data)
+        notebook_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb"
+        backup_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-backup.ipynb"
+        
+        notebook = self.read_notebook(self.NOTEBOOK_NAME)
+
+        # Backup before modifying
+        shutil.copy(notebook_path, backup_path)
+        print(f"Backup created at {backup_path}")
+
+        # Append the cells to the notebook
+        for cell_content in cell_contents:
+            notebook["cells"].append(cell_content)
             is_write_complete = self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
             if is_write_complete is Exception:
                 tb_str = traceback.format_exc()
                 print("Failed to write to notebook.")
                 return is_write_complete, tb_str
-            
-            print(f"Appended cell to notebook {self.NOTEBOOK_NAME}")
-            
+        
+        print(f"Appended cells to notebook {self.NOTEBOOK_NAME}")
+
         return True, None
 
     """
