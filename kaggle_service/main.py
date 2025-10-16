@@ -35,24 +35,28 @@ def download_dataset(search_term: str):
 """
 @app.post("/notebook/update/{notebook_name}")
 def update_notebook(notebook_name: str, request: NotebookUpdateRequest):
+    statusDetails = ""
+
     try:
         notebook_service = NotebookService("ryanburnsworth", notebook_name)
 
-        is_complete = notebook_service.create_or_append_notebook(request.notebook_content)
+        is_complete, tb_str = notebook_service.create_or_append_notebook(request.notebook_content)
         if isinstance(is_complete, Exception):
+            statusDetails = tb_str
             raise is_complete
 
-        is_tested = notebook_service.test_notebook()
-        if isinstance(is_tested, Exception):
-            raise is_tested
+        is_success, last_output, tb_str = notebook_service.test_notebook()
+        if is_success is False and isinstance(last_output, Exception):
+            statusDetails = str(tb_str)
+            raise last_output
 
     except Exception as e:
         return JSONResponse(
             status_code = 500,
             content = {
                 "status": "error", 
-                "message": "Error updating or testing notebook.", 
-                "details": str(e)
+                "message": str(e), 
+                "details": statusDetails
             }
         )
     

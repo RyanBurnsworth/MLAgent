@@ -2,6 +2,7 @@ import shutil
 import time
 import json
 import subprocess
+import traceback
 import nbformat
 import papermill as pm
 from pathlib import Path
@@ -24,6 +25,8 @@ class NotebookService:
 
     """
     def create_or_append_notebook(self, notebook_data):
+        print("Creating or appending to notebook...")
+
         notebook_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb"
         backup_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-backup.ipynb"
         
@@ -35,8 +38,9 @@ class NotebookService:
             notebook = notebook_data
             is_write_complete = self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
             if is_write_complete is Exception:
+                tb_str = traceback.format_exc()
                 print("Failed to write to notebook.")
-                return is_write_complete
+                return is_write_complete, tb_str
             
             print(f"Created new notebook {self.NOTEBOOK_NAME}")
         else:
@@ -50,12 +54,13 @@ class NotebookService:
             notebook["cells"].append(notebook_data)
             is_write_complete = self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
             if is_write_complete is Exception:
+                tb_str = traceback.format_exc()
                 print("Failed to write to notebook.")
-                return is_write_complete
+                return is_write_complete, tb_str
             
             print(f"Appended cell to notebook {self.NOTEBOOK_NAME}")
             
-        return True
+        return True, None
 
     """
     
@@ -63,16 +68,20 @@ class NotebookService:
 
     """
     def test_notebook(self):
+        print("Testing notebook execution...")
+        
         notebook_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb"
         notebook_output_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-output.ipynb"
         backup_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-backup.ipynb"
 
         try:
+            print("Executing notebook with papermill...")
             pm.execute_notebook(notebook_path, notebook_output_path)
         except Exception as e:
             print("An error occurred while executing the notebook:", e)
+            tb_str = traceback.format_exc()
             self.revert_notebook()
-            return e
+            return False, e, tb_str
         
         print("Notebook service is operational.")
 
@@ -85,7 +94,7 @@ class NotebookService:
         if last_output == "":
             raise Exception("Executed notebook has no output.")
 
-        return last_output
+        return True, last_output, None
 
 
     """

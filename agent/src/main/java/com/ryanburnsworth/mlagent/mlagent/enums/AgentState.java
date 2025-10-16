@@ -1,7 +1,7 @@
 package com.ryanburnsworth.mlagent.mlagent.enums;
 
 public enum AgentState {
-    DOWNLOADING_DATASET,
+    GENERATING_DATA_LOADER_CELLS,
     LOADING_DATA,
     PREPROCESSING_DATA,
     TRAINING_MODEL,

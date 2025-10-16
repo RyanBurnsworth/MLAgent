@@ -4,7 +4,7 @@ import org.springframework.ai.chat.prompt.PromptTemplate;
 
 public class Prompts {
     public static final PromptTemplate DATA_LOADING_PROMPT = new PromptTemplate("""
-                     Create a Jupyter notebook cell that loads and inspects a dataset. Your task:
+                    Create a Jupyter notebook cell that loads and inspects a dataset. Your task:
             
                     You are provided with the following dataset metadata:
             
@@ -52,94 +52,19 @@ public class Prompts {
                     ONLY RETURN THIS JSON OBJECT as the final output. Do not return empty notebook cells, extra code, or unrelated comments.
             """);
 
-    public static final String GENERATE_NOTEBOOK_PROMPT = """
-            You are an AI assistant tasked with generating a complete Jupyter notebook that trains a machine learning model on a given dataset.
-            
-            You are provided with the following dataset metadata:
-            
-            Title: {record["title"]}
-            Subtitle: {record["subtitle"]}
-            Description: {record["description"]}
-            Columns: {record["headers"]}
-            Sample data: {record["top25"]}
-            Dataset files: {record["datasets"]}
-            
-            Notebook Requirements:
-            
-            Include Markdown cells:
-            
-            At the top: introduce the dataset and the problem to solve.
-            
-            Before each code block: explain what it does and why.
-            
-            At the end: summarize the results and insights.
-            
-            Include Code cells to:
-            
-            Load the dataset(s) and inspect it (head(), info(), describe()).
-            
-            Perform preprocessing (handle missing values, encode categorical variables, normalize/scale as needed).
-            
-            Split data into train/test sets.
-            
-            Train an appropriate ML model (regression, classification, clustering, etc.) based on the dataset.
-            
-            Evaluate the model using relevant metrics.
-            
-            The last output cell must produce a JSON object containing the following:
-            
-            {
-              "accuracy": ...,
-              "precision": ...,
-              "recall": ...,
-              "f1_score": ...,
-              "model_used": "<model_used>"
-            }
-            
-            <model_used> should indicate which model was trained (e.g., RandomForestClassifier, LogisticRegression, etc.).
-            
-            Include comments in code explaining key steps.
-            
-            Use popular Python libraries (pandas, numpy, matplotlib/seaborn, scikit-learn).
-            
-            Task: Using the dataset metadata, generate a Jupyter notebook that trains a machine learning model, evaluates it, and outputs a JSON object with accuracy, precision, recall, F1 score, and the model used as the last output. Include code, Markdown explanations, visualizations, and all intermediate outputs.
-            """;
-
-    public static final String EVALUATOR_PROMPT = """
-            You are an AI assistant tasked with evaluating a machine learning model's performance based on its metrics.
-            
-            You will receive a JSON object with the following structure:
-            
-            {
-              "accuracy": ...,
-              "precision": ...,
-              "recall": ...,
-              "f1_score": ...,
-              "model_used": "<model_used>"
-            }
-            
-            Instructions:
-            
-            Analyze the metrics and determine if this model performs well enough. Consider that higher values are better for all metrics.
-            
-            If the performance is acceptable, your output should be:
-            
-            { "decision": "keep", "reason": "<brief reasoning>" }
-            
-            If the performance is insufficient, your output should be:
-            
-            { "decision": "try_again", "reason": "<brief reasoning>", "suggested_model": "<optional alternative model>" }
-            
-            Base your reasoning on general ML guidelines:
-            
-            High F1 score is important if the dataset is imbalanced.
-            
-            Accuracy alone is not sufficient for imbalanced datasets.
-            
-            Consider precision vs recall trade-offs depending on the task.
-            
-            Keep your JSON output strictly in the specified format—do not add extra text.
-            
-            Task: Evaluate the provided metrics and decide whether to keep this model or try a different one. Include a brief reason and optionally suggest an alternative model if needed.
-            """;
+    public static final PromptTemplate ERROR_HANDLING_PROMPT = new PromptTemplate("""
+        There was an error in the code you provided. Fix the errors provided and output a valid output.
+    
+        You will be provided with:
+    
+        userPrompt: {userPrompt} - the user's prompt
+        aiResponse: {aiResponse} - your code response to the user
+        errorMessage: {errorMessage} - the generic error message
+        errorDetails: {errorDetails} - the stack trace
+    
+        Requirements:
+            - Rewrite the fixed code in its entirety. Not just the fixes.
+            - Output must be in a valid ipynb code format. Either an entire ipynb notebook or cells to be appended within an existing notebook depending on the aiResponse given above.
+            - Do not add additional text or comments. Return only the fixed code
+    """);
 }
