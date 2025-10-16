@@ -21,11 +21,14 @@ def download_dataset(search_term: str):
         result = dataset_service.download_dataset(search_term)
         return result
     except Exception as e:
-        return {
-            "status": "error", 
-            "message": "Error downloading dataset.", 
-            "details": str(e)
-        }
+        return JSONResponse(
+            status_code = 500,
+            content = {
+                "status": "error", 
+                "message": "Error downloading dataset.", 
+                "details": str(e)
+            }
+        )
 
 """
     Create or append to a Kaggle notebook and test it.
@@ -42,19 +45,26 @@ def update_notebook(notebook_name: str, request: NotebookUpdateRequest):
         is_tested = notebook_service.test_notebook()
         if isinstance(is_tested, Exception):
             raise is_tested
-        
+
     except Exception as e:
-        return {
-            "status": "error", 
-            "message": "Error updating or testing notebook.", 
-            "details": str(e)
-        }
+        return JSONResponse(
+            status_code = 500,
+            content = {
+                "status": "error", 
+                "message": "Error updating or testing notebook.", 
+                "details": str(e)
+            }
+        )
     
-    return {
-        "status": "success", 
-        "message": "",
-        "details": ""
-    }
+    return JSONResponse(
+        status_code = 200,
+        content = {
+            "status": "success", 
+            "message": "", 
+            "details": ""
+        }
+    )
+
 
 
 @app.exception_handler(RequestValidationError)
