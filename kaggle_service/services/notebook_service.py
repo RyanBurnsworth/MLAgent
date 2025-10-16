@@ -34,30 +34,42 @@ class NotebookService:
         notebook_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb"
         backup_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-backup.ipynb"
         
-        notebook_str = self.read_notebook(self.NOTEBOOK_NAME)
-        notebook = None
-
-        if notebook_str is not None:
-            notebook = notebook_str
-
-            # Backup before modifying
-            shutil.copy(notebook_path, backup_path)
-            print(f"Backup created at {backup_path}")
+        notebook = self.read_notebook(self.NOTEBOOK_NAME)
+        if notebook is None:
+            print("No existing notebook found. A new one will be created.")
+            return False
 
         cell_str = urllib.parse.unquote(cell)
         cell = json.loads(cell_str)
 
         if notebook is not None:
+            notebook = notebook
+
+            # Backup before modifying
+            shutil.copy(notebook_path, backup_path)
+            print(f"Backup created at {backup_path}")
+
             # Append a cell (cell must be parsed from JSON string to dict if needed)
             notebook["cells"].append(cell)
-            self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
+            is_write_complete = self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
+            if not is_write_complete:
+                print("Failed to write to notebook.")
+                return False
+            
             print(f"Appended cell to notebook {self.NOTEBOOK_NAME}")
+            
+            return True
         else:
             # Create new notebook from full JSON content
             notebook = cell
-            self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
+            is_write_complete = self.write_to_notebook(notebook, self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb")
+            if not is_write_complete:
+                print("Failed to write to notebook.")
+                return False
+            
             print(f"Created new notebook {self.NOTEBOOK_NAME}")
-
+            
+            return True
 
     """
     
@@ -83,7 +95,11 @@ class NotebookService:
             backup_path.unlink()  
             print(f"Removed backup at {backup_path}")
 
-        return self.get_last_notebook_output(notebook_output_path)
+        last_output = self.get_last_notebook_output(notebook_output_path)
+        if last_output is "":
+            raise Exception("No output found in the executed notebook.")
+
+        return last_output
 
 
     """
@@ -92,7 +108,10 @@ class NotebookService:
     
     """
     def push_to_kaggle(self):
-        self.create_metadata()
+        metadata_created = self.create_metadata()
+        if not metadata_created:
+            print("Failed to create metadata. Cannot push to Kaggle.")
+            return None
         
         try:
             subprocess.run(["kaggle", "kernels", "push", "-p", str(self.WORKDIR)], check=True)
@@ -159,9 +178,11 @@ class NotebookService:
             with open(notebook_path, "w") as f:
                 json.dump(notebook, f, indent=2)
             print(f"Wrote to notebook at {notebook_path}")
+            
+            return True
         except Exception as e:
             print("An error occurred while writing to the notebook:", e)
-            return None
+            return False
 
 
     """
@@ -237,6 +258,7 @@ class NotebookService:
             with open(self.METADATA_PATH, "w") as f:
                 json.dump(kernel_metadata, f, indent=2)
             print(f"Created metadata at {self.METADATA_PATH}")
+            return True
         except Exception as e:
             print("An error occurred while creating metadata:", e)
-            return None
+            return False

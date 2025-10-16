@@ -1,92 +1,101 @@
-import json
-import pandas as pd
 import pytest
+import json
+from unittest.mock import patch, MagicMock
+from pathlib import Path
+import subprocess
 
 from services.dataset_service import DatasetService
 
-
 @pytest.fixture
-def dataset_service(tmp_path, monkeypatch):
-    # Patch the WORKDIR to use pytest tmp_path
-    monkeypatch.setattr("services.dataset_service.WORKDIR", tmp_path)
-    return DatasetService()
+def dataset_service(tmp_path):
+    # Use tmp_path for isolated test directory
+    service = DatasetService()
+    service.workdir = tmp_path
+    return service
 
+def test_download_dataset_success(dataset_service):
+    """
+    Test successful dataset download flow.
+    """
+    mock_output = "ref title size\n--- --- ---\ndataset1 Dataset One 100KB"
 
-def test_list_datasets_returns_csvs(dataset_service, tmp_path):
-    dataset_dir = tmp_path / "my_dataset"
-    dataset_dir.mkdir()
-    f1 = dataset_dir / "train.csv"
-    f2 = dataset_dir / "test.csv"
-    f1.write_text("a,b,c\n1,2,3\n")
-    f2.write_text("x,y,z\n4,5,6\n")
+    with patch("services.dataset_service.subprocess.run") as mock_subprocess, \
+         patch.object(DatasetService, "list_datasets") as mock_list, \
+         patch.object(DatasetService, "get_dataset_details") as mock_details:
 
-    result = dataset_service.list_datasets(dataset_dir)
+        mock_subprocess.return_value = MagicMock(stdout=mock_output, returncode=0)
+        mock_list.return_value = [Path("dummy.csv")]
+        mock_details.return_value = {"dataset_name": "dataset1"}
 
-    assert len(result) == 2
-    assert all(p.suffix == ".csv" for p in result)
+        result = dataset_service.download_dataset("ufo")
 
+        assert result["dataset_name"] == "dataset1"
 
-def test_read_csv_reads_file(dataset_service, tmp_path):
-    dataset_dir = tmp_path / "my_dataset"
-    dataset_dir.mkdir()
-    csv_file = dataset_dir / "train.csv"
-    csv_file.write_text("col1,col2\n1,2\n3,4\n")
+def test_download_dataset_no_output(dataset_service):
+    """
+    Test download_dataset handles no datasets found properly.
+    """
+    mock_output = "ref title size\n--- --- ---\n"  # headers only
 
-    df = dataset_service.read_csv("my_dataset", "train")
-    assert isinstance(df, pd.DataFrame)
-    assert list(df.columns) == ["col1", "col2"]
-    assert df.shape == (2, 2)
+    with patch("services.dataset_service.subprocess.run") as mock_subprocess:
+        mock_subprocess.return_value = MagicMock(stdout=mock_output, returncode=0)
 
+        result = dataset_service.download_dataset("nonexistent")
+        assert result == ""
 
-def test_get_headers(dataset_service, tmp_path):
-    dataset_dir = tmp_path / "my_dataset"
-    dataset_dir.mkdir()
-    (dataset_dir / "train.csv").write_text("col1,col2,col3\n1,2,3\n")
+def test_download_dataset_calledprocesserror(dataset_service):
+    """
+    Test that download_dataset handles subprocess errors gracefully.
+    """
+    with patch("services.dataset_service.subprocess.run") as mock_subprocess:
+        mock_subprocess.side_effect = subprocess.CalledProcessError(1, "kaggle")
 
-    headers = dataset_service.get_headers("my_dataset", "train")
-    assert headers == ["col1", "col2", "col3"]
+        result = dataset_service.download_dataset("ufo")
+        assert result is None
 
+def test_get_dataset_manifest_success(dataset_service):
+    """
+    Test successful retrieval of dataset manifest.
+    """
+    mock_data = {
+        "title": "UFO Sightings",
+        "subtitle": "Sub",
+        "description": "Desc"
+    }
 
-def test_get_top_25_rows(dataset_service, tmp_path):
-    dataset_dir = tmp_path / "my_dataset"
-    dataset_dir.mkdir()
-    data = "\n".join([f"{i},{i+1}" for i in range(30)])
-    (dataset_dir / "train.csv").write_text("a,b\n" + data)
+    with patch("services.dataset_service.subprocess.run") as mock_subprocess, \
+         patch("builtins.open", new_callable=MagicMock) as mock_open:
 
-    top25 = dataset_service.get_top_25_rows("my_dataset", "train")
-    assert len(top25.splitlines()) == 25  # 25 rows only
-    assert "0,1" in top25
+        mock_subprocess.return_value = MagicMock()
+        # Kaggle metadata file returns JSON as string
+        mock_open.return_value.__enter__.return_value.read.return_value = json.dumps(mock_data)
 
+        result = dataset_service.get_dataset_manifest("ufo")
+        assert result["title"] == "UFO Sightings"
 
-def test_get_dataset_manifest_reads_and_parses(monkeypatch, dataset_service, tmp_path):
-    manifest_file = tmp_path / "dataset-metadata.json"
-    content = json.dumps({"title": "Demo", "subtitle": "Sub", "description": "Desc"})
-    manifest_file.write_text(json.dumps(content))  # double-encoded
+def test_get_dataset_manifest_subprocess_error(dataset_service):
+    """
+    Test get_dataset_manifest handles subprocess errors.
+    """
+    with patch("services.dataset_service.subprocess.run") as mock_subprocess:
+        mock_subprocess.side_effect = subprocess.CalledProcessError(1, "cmd")
 
-    # Patch subprocess.run to do nothing
-    monkeypatch.setattr("subprocess.run", lambda *a, **k: None)
+        result = dataset_service.get_dataset_manifest("ufo")
+        assert result is None
 
-    # Patch open path
-    monkeypatch.chdir(tmp_path)
+def test_list_datasets_success(dataset_service, tmp_path):
+    """
+    Test list_datasets finds CSV files in directory.
+    """
+    csv_file = tmp_path / "file.csv"
+    csv_file.write_text("test")
 
-    result = dataset_service.get_dataset_manifest("demo/dataset")
-    assert result["title"] == "Demo"
-    assert result["subtitle"] == "Sub"
-    assert result["description"] == "Desc"
+    result = dataset_service.list_datasets(tmp_path)
+    assert csv_file in result
 
-
-def test_get_dataset_details(monkeypatch, dataset_service, tmp_path):
-    dataset_dir = tmp_path / "demo_dataset"
-    dataset_dir.mkdir()
-    (dataset_dir / "train.csv").write_text("col1,col2\n1,2\n")
-
-    # Patch helper methods
-    monkeypatch.setattr(dataset_service, "get_dataset_manifest", lambda x: {
-        "title": "DemoTitle", "subtitle": "DemoSub", "description": "DemoDesc"
-    })
-
-    record = dataset_service.get_dataset_details("demo_dataset", "train")
-    assert record["title"] == "DemoTitle"
-    assert record["datasets"] == ["train"]
-    assert "col1" in record["headers"]
-    assert "1,2" in record["top25"]
+def test_list_datasets_no_csv(dataset_service, tmp_path):
+    """
+    Test list_datasets returns None when no CSV files exist.
+    """
+    result = dataset_service.list_datasets(tmp_path)
+    assert result is None

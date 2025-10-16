@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-import pandas as pd
 import subprocess
 
 WORKDIR = Path(f"./datasets")
@@ -54,13 +53,20 @@ class DatasetService:
             print(f"Dataset downloaded to {download_path}")
 
             datasets_paths = self.list_datasets(Path(download_path))
+            if datasets_paths is None:
+                print("No datasets found after download.")
+                return None
 
             # get the dataset names without the .csv extension
             datasets = [p.stem for p in datasets_paths]
 
             print(f"Datasets downloaded: {datasets} ")
-        
-            return self.get_dataset_details(dataset_name, datasets)
+
+            dataset_details = self.get_dataset_details(dataset_name, datasets)
+            if dataset_details is None:
+                print("Failed to get dataset details.")
+                return None
+            return dataset_details
         except subprocess.CalledProcessError as e:
             print("An error occurred while downloading the dataset:", e)
             return None
@@ -75,6 +81,9 @@ class DatasetService:
         try:
             # extract the dataset details
             data = self.get_dataset_manifest(dataset_name)
+            if data is None:
+                print("No manifest data found.")
+                return None
 
             # build the full paths to each dataset file
             dataset_paths = []
@@ -125,28 +134,7 @@ class DatasetService:
             return None
         except Exception as e:
             print("An error occurred while getting dataset manifest:", e)
-            raise e
-
-
-    """
-    
-    Read a CSV file from the dataset directory into a pandas DataFrame
-    
-    """
-    def read_csv(self, dataset_name, training_data_filename):
-        try:
-            dataset_path = Path(self.workdir) / dataset_name
-            csv_file = dataset_path / f"{training_data_filename}.csv"
-
-            if not csv_file.exists():
-                raise FileNotFoundError(f"Dataset file {csv_file} not found")
-
-            df = pd.read_csv(csv_file, engine='python', quotechar='"', on_bad_lines='skip')
-            return df
-        except Exception as e:
-            print("An error occurred while reading the CSV file:", e)
-            raise e
-
+            return None
 
     """
     
@@ -162,4 +150,4 @@ class DatasetService:
             return csv_files
         except Exception as e:
             print("An error occurred while listing datasets:", e)
-            raise e
+            return None
