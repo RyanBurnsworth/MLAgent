@@ -1,7 +1,7 @@
 package com.ryanburnsworth.mlagent.mlagent.services.agent;
 
-import com.ryanburnsworth.mlagent.mlagent.models.StatusResponse;
+import com.ryanburnsworth.mlagent.mlagent.models.ResponseStatus;
 
 public interface AgentService {
-    StatusResponse performAgenticMachineLearning(String searchTerm);
+    ResponseStatus machineLearningOrchestrator(String notebookName, String searchTerm);
 }

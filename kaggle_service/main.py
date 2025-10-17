@@ -37,28 +37,17 @@ def download_dataset(search_term: str):
 """
 @app.post("/notebook/create/{notebook_name}")
 def create_notebook(notebook_name: str, request: CreateNotebookRequest):
-    statusDetails = ""
-
     try:
         notebook_service = NotebookService("ryanburnsworth", notebook_name)
-
-        is_complete, tb_str = notebook_service.create_notebook(request.notebook_content)
-        if isinstance(is_complete, Exception):
-            statusDetails = tb_str
-            raise is_complete
-
-        is_success, last_output, tb_str = notebook_service.test_notebook()
-        if is_success is False and isinstance(last_output, Exception):
-            statusDetails = str(tb_str)
-            raise last_output
+        notebook_service.create_update_test_notebook(content=request.notebook_content, isCreate=True)
 
     except Exception as e:
         return JSONResponse(
             status_code = 500,
             content = {
                 "status": "error", 
-                "message": str(e), 
-                "details": statusDetails
+                "message": "Error creating notebook.", 
+                "details": str(e)
             }
         )
     
@@ -77,28 +66,17 @@ def create_notebook(notebook_name: str, request: CreateNotebookRequest):
 """
 @app.post("/notebook/update/{notebook_name}")
 def update_notebook(notebook_name: str,  cell_contents: List[Dict[str, Any]]):
-    statusDetails = ""
-
     try:
         notebook_service = NotebookService("ryanburnsworth", notebook_name)
-
-        is_complete, tb_str = notebook_service.append_cells_to_notebook(cell_contents)
-        if isinstance(is_complete, Exception):
-            statusDetails = tb_str
-            raise is_complete
-
-        is_success, last_output, tb_str = notebook_service.test_notebook()
-        if is_success is False and isinstance(last_output, Exception):
-            statusDetails = str(tb_str)
-            raise last_output
+        notebook_service.create_update_test_notebook(content=cell_contents, isCreate=False)
 
     except Exception as e:
         return JSONResponse(
             status_code = 500,
             content = {
                 "status": "error", 
-                "message": str(e), 
-                "details": statusDetails
+                "message": "Error updating notebook.", 
+                "details": str(e)
             }
         )
     

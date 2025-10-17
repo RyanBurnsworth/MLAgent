@@ -3,10 +3,8 @@ import time
 import json
 import subprocess
 import traceback
-import nbformat
 import papermill as pm
 from pathlib import Path
-import ast
 
 class NotebookService:
 
@@ -18,6 +16,34 @@ class NotebookService:
         self.METADATA_PATH = self.WORKDIR / "kernel-metadata.json"
         self.WORKDIR.mkdir(exist_ok=True)
 
+    """
+    
+    Create or update a notebook with the provided content and test it.
+    
+    """
+    def create_update_test_notebook(self, content, isCreate):
+        if isCreate:
+            # create the notebook
+            is_create_successful, tb_str = self.create_notebook(content)
+            if isinstance(is_create_successful, Exception):
+                raise Exception(str(tb_str))
+        else:
+            # append to the notebook
+            is_update_complete, tb_str = self.append_cells_to_notebook(content)
+            if isinstance(is_update_complete, Exception):
+                raise Exception(str(tb_str))
+
+        # test the notebook
+        ex, tb_str = self.test_notebook()
+        if isinstance(ex, Exception):
+            raise Exception(str(tb_str))
+
+
+    """
+    
+    Create a new notebook with the provided content
+    
+    """
     def create_notebook(self, notebook_content):
         print("Creating notebook...")
 
@@ -39,6 +65,7 @@ class NotebookService:
             print("Notebook already exists. Use append function to add cells.")
             raise Exception("Notebook already exists. Use append function to add cells.")
     
+
     """
     
     Append new cells to the existing notebook
@@ -47,14 +74,7 @@ class NotebookService:
     def append_cells_to_notebook(self, cell_contents):
         print("Appending to notebook...")
 
-        notebook_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb"
-        backup_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-backup.ipynb"
-        
         notebook = self.read_notebook(self.NOTEBOOK_NAME)
-
-        # Backup before modifying
-        shutil.copy(notebook_path, backup_path)
-        print(f"Backup created at {backup_path}")
 
         # Append the cells to the notebook
         for cell_content in cell_contents:
@@ -69,6 +89,7 @@ class NotebookService:
 
         return True, None
 
+
     """
     
     Test the notebook execution using papermill
@@ -77,31 +98,24 @@ class NotebookService:
     def test_notebook(self):
         print("Testing notebook execution...")
         
-        notebook_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb"
+        notebook_path, _ = self.backup_notebook()
         notebook_output_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-output.ipynb"
-        backup_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-backup.ipynb"
 
         try:
             print("Executing notebook with papermill...")
+
             pm.execute_notebook(notebook_path, notebook_output_path)
+
+            print(f"Executed notebook and saved output to {notebook_output_path}")
         except Exception as e:
             print("An error occurred while executing the notebook:", e)
             tb_str = traceback.format_exc()
             self.revert_notebook()
-            return False, e, tb_str
-        
-        print("Notebook service is operational.")
+            return e, tb_str
 
-        # Remove backup if execution was successful
-        if backup_path.exists():
-            backup_path.unlink()  
-            print(f"Removed backup at {backup_path}")
+        self.revert_notebook()
 
-        last_output = self.get_last_notebook_output(notebook_output_path)
-        if last_output == "":
-            raise Exception("Executed notebook has no output.")
-
-        return True, last_output, None
+        return None, None
 
 
     """
@@ -158,6 +172,8 @@ class NotebookService:
         notebook_path = self.WORKDIR / f"{notebook_name}.ipynb"
         notebook = None
 
+        print("Reading notebook from:", notebook_path)
+
         try:
             # Load the notebook as a Python dictionary
             with open(notebook_path, "r", encoding="utf-8") as f:
@@ -186,6 +202,21 @@ class NotebookService:
             print("An error occurred while writing to the notebook:", e)
             return e
 
+    """
+
+    Create a backup of the current notebook state
+
+    """
+    def backup_notebook(self):
+        notebook_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb"
+        backup_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-backup.ipynb"
+
+        shutil.copy(notebook_path, backup_path)
+        print(f"Backup created at {backup_path}")
+    
+    
+        return notebook_path, backup_path
+    
 
     """
     
@@ -208,38 +239,6 @@ class NotebookService:
         except Exception as e:
             print("An error occurred while reverting the notebook:", e)
             return None
-
-    def get_last_notebook_output(self, notebook_output_path):
-        try:
-            nb = nbformat.read(notebook_output_path, as_version=4)
-        except Exception as e:
-            print("An error occurred while reading the executed notebook:", e)
-            return None
-
-        last_output = None
-        for cell in reversed(nb.cells):
-            if cell.cell_type == 'code' and cell.outputs:
-                last_output = cell.outputs[-1]
-                break
-
-        if last_output is not None:
-            if last_output.output_type == 'stream':
-                print(last_output.text)
-                return last_output.text
-            elif last_output.output_type in ['display_data', 'execute_result']:
-                text = last_output.data.get('text/plain')
-                if text:
-                    try:
-                        # Convert string representation of dict to actual dict
-                        result = ast.literal_eval(text)
-                        return result
-                    except Exception as e:
-                        print("Failed to parse notebook output:", e)
-                        return text
-        else:
-            print("No output found in the notebook.")
-            return None
-
 
     """
     

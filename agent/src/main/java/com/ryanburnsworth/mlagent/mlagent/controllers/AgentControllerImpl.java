@@ -1,6 +1,6 @@
 package com.ryanburnsworth.mlagent.mlagent.controllers;
 
-import com.ryanburnsworth.mlagent.mlagent.models.StatusResponse;
+import com.ryanburnsworth.mlagent.mlagent.models.ResponseStatus;
 import com.ryanburnsworth.mlagent.mlagent.services.agent.AgentService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,9 +16,12 @@ public class AgentControllerImpl implements AgentController {
     }
 
     @Override
-    @GetMapping("/initialize")
-    public ResponseEntity<StatusResponse> initiateAgents(@RequestParam(name = "searchTerm") String searchTerm) {
-        StatusResponse response = this.agentService.performAgenticMachineLearning(searchTerm);
+    @GetMapping("/start")
+    public ResponseEntity<ResponseStatus> startAgents(
+            @RequestParam(name = "notebookName") String notebookName,
+            @RequestParam(name = "searchTerm") String searchTerm
+    ) {
+        ResponseStatus response = this.agentService.machineLearningOrchestrator(notebookName, searchTerm);
         return ResponseEntity.ok(response);
     }
 }

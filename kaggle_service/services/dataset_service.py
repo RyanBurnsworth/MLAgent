@@ -12,7 +12,7 @@ class DatasetService:
 
     """
     
-    Download the hottest dataset using the search term
+    Download the hottest dataset on Kaggle using the search term
     
     """
     def download_dataset(self, search_term):
@@ -23,6 +23,8 @@ class DatasetService:
         ]
 
         try:
+            print("Searching for datasets using term:", search_term)
+
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             output = result.stdout
 
@@ -38,10 +40,12 @@ class DatasetService:
 
             dataset_name = first_line.split()[0]
 
-            print("Dataset name:", dataset_name)
+            print("Dataset found named:", dataset_name)
 
             download_path = Path(self.workdir) / dataset_name
             Path(download_path).mkdir(parents=True, exist_ok=True)
+
+            print("Downloading dataset to:", download_path)
 
             subprocess.run(
                 ["kaggle", "datasets", "download", dataset_name, "-p", download_path, "--unzip"],
@@ -76,6 +80,8 @@ class DatasetService:
     
     """
     def get_dataset_details(self, dataset_name, datasets):
+        print("Getting dataset details...")
+
         try:
             # extract the dataset details
             data = self.get_dataset_manifest(dataset_name)
@@ -113,6 +119,8 @@ class DatasetService:
     
     """
     def get_dataset_manifest(self, dataset_name):
+        print("Getting dataset manifest...")
+
         try:
             # downloads the datasets metadata
             subprocess.run(
@@ -140,6 +148,8 @@ class DatasetService:
     
     """
     def list_datasets(self, dataset_path):
+        print("Listing datasets in:", dataset_path)
+        
         try:
             csv_files = list(dataset_path.glob("*.csv"))
             if not csv_files:

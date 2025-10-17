@@ -40,16 +40,6 @@ public class Prompts {
                     Store the loaded training dataset in a variable called 'df' for the next step.
                     Store the loaded validation dataset, if any, in a variable called 'test_df' for the next step.
                     GPU must be used automatically if available for any future ML tasks.
-            
-                    dataset_summary = \\{
-                        "shape": dataset shape,
-                        "columns": number of columns,
-                        "missing_values": are there missing values,
-                        "sample_data": dataset head,
-                        "statistical_summary": dataset description,
-                        "info": dataset info
-                    \\}
-                    ONLY RETURN THIS JSON OBJECT as the final output. Do not return empty notebook cells, extra code, or unrelated comments.
             """);
 
     public static final PromptTemplate DATA_PREPROCESSING_PROMPT = new PromptTemplate("""

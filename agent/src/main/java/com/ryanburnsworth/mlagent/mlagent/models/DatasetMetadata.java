@@ -8,7 +8,7 @@ import java.util.List;
 
 @Getter
 @Setter
-public class DatasetResponse {
+public class DatasetMetadata {
 
     @JsonProperty("dataset_name")
     private String datasetName;

@@ -5,7 +5,7 @@ import lombok.Getter;
 
 @Getter
 @Builder
-public class StatusResponse {
+public class ResponseStatus {
     String status;
 
     String message;
