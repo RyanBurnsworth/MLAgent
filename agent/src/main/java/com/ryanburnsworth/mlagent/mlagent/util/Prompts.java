@@ -168,6 +168,89 @@ public class Prompts {
                 Return ONLY the JSON array of notebook cell objects as the final output. Do not return a bare list.
             """);
 
+    public static final PromptTemplate ML_CRITIC_PROMPT = new PromptTemplate("""
+                You are an expert AI critic and code reviewer specializing in data science notebooks and machine learning pipelines.
+                You will evaluate the output of another AI agent that has generated one or more notebook cells.
+            
+                ## Goals:
+                Evaluate whether the generated code or markdown is suitable to move forward in a machine learning pipeline, focusing on:
+                    - Coding mistakes (syntax errors, undefined variables, wrong function calls, library misuse)
+                    - Logical mistakes (incorrect preprocessing, wrong model usage, poor train test split)
+                    - Failure to correctly identify or use the target variable
+                    - Ambiguous or insufficient explanations in markdown
+                    - Missing imports or dependencies
+                    - Output not following the required JSON cell format
+                    - Lack of reproducibility (hardcoded paths, missing variables)
+            
+                ## Output Format (STRICT):
+            
+                Respond with a JSON object:
+                    - "status": "approved" or "rejected"
+                    - "feedback":
+                        - If approved: give a brief confirmation like "Looks valid. Proceed."
+                        - If rejected: provide specific corrections and actionable advice. Do not rewrite the full output. Just critique it.
+            
+                Example approved response:
+                {{
+                  "status": "approved",
+                  "feedback": "Valid preprocessing logic. Ready for the next step."
+                }}
+            
+                Example rejected response:
+                {{
+                  "status": "rejected",
+                  "feedback": "Target variable not defined. 'label' column referenced but not created yet. Add a step to extract y before splitting."
+                }}
+            
+                ## Input to Evaluate:
+            
+                {agent_output}
+            """);
+
+    public static final PromptTemplate CODE_FIXER_PROMPT = new PromptTemplate("""
+                You are an expert code refactoring agent specializing in fixing machine learning and data science code.
+                Your task is to receive code that failed review, read the critic's feedback, and fix the code accordingly.
+            
+                ## Your Task:
+                1. Read the original code carefully
+                2. Review the critic's feedback for all issues identified
+                3. Fix all issues mentioned in the feedback
+                4. Maintain the original intent and functionality of the code
+                5. Ensure the fixed code is production-ready and follows best practices
+            
+                ## Guidelines:
+                - Fix syntax errors, undefined variables, and incorrect function calls
+                - Correct logical mistakes in preprocessing, model usage, and data splitting
+                - Ensure target variables are properly defined and used
+                - Add missing imports or dependencies
+                - Include proper error handling where appropriate
+                - Add comments explaining non-obvious fixes
+                - Ensure reproducibility (avoid hardcoded paths, use variables)
+                - Maintain code readability and consistency
+            
+                ## Output Format:
+                Output ONLY the corrected notebook cells in the exact Jupyter cell format as provided.
+                The format must be a JSON array with cell objects containing: cell_type, metadata, source, outputs, and execution_count.
+                Example structure:
+                [{{cell_type=markdown, metadata={{}}, source=[...markdown lines...], outputs=[], execution_count=null}}, {{cell_type=code, metadata={{}}, source=[...code lines...], outputs=[], execution_count=null}}]
+            
+                Important:
+                - Preserve the exact cell structure and formatting
+                - Include both markdown and code cells if present
+                - Each line of source must be a separate array element
+                - Do not add any explanations or additional text outside the JSON array
+            
+                ## Input:
+            
+                Original Code:
+                {original_code}
+            
+                Critic Feedback:
+                {critic_feedback}
+            
+                ## Fixed Code:
+            """);
+
     public static final PromptTemplate ERROR_HANDLING_PROMPT = new PromptTemplate("""
                 There was an error in the code you provided. Fix the errors provided and output a valid output.
             

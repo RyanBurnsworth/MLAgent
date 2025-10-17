@@ -1,6 +1,8 @@
 package com.ryanburnsworth.mlagent.mlagent.services.agent;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ryanburnsworth.mlagent.mlagent.models.AgentMemory;
+import com.ryanburnsworth.mlagent.mlagent.models.CriticResult;
 import com.ryanburnsworth.mlagent.mlagent.models.DatasetMetadata;
 import com.ryanburnsworth.mlagent.mlagent.models.ResponseStatus;
 import com.ryanburnsworth.mlagent.mlagent.services.ml.MLService;
@@ -80,10 +82,15 @@ public class AgentServiceImpl implements AgentService {
 
         try {
             log.info("NotebookCreatorAgent; Getting notebook content from LLM");
-            Map<String, Object> payload = (Map<String, Object>) getPayloadFromLLM(prompt.getContents(), isCreated);
+            String content = getContentFromLLM(prompt.getContents());
 
-            ResponseStatus creationStatus = performNotebookAction(this.notebookName, payload);
-            return this.handleResponseStatus(creationStatus);
+            updateAgentMemory(prompt.getContents(), content);
+            Map<String, Object> payload = (Map<String, Object>) convertToPayload(content, false);
+
+            // evaluate the agents output before committing
+            Map<String, Object> evaluatedPayload = (Map<String, Object>) evaluateAgentOutput(payload);
+
+            return performNotebookAction(this.notebookName, evaluatedPayload);
         } catch (Exception e) {
             log.error("Error reading data loading cells from LLM {}", e.getMessage());
             return getResponseStatusError(e);
@@ -99,12 +106,16 @@ public class AgentServiceImpl implements AgentService {
         ));
 
         try {
-            ;
-            List<Map<String, Object>> payload = (List<Map<String, Object>>) getPayloadFromLLM(prompt, isCreated);
+            String content = getContentFromLLM(prompt);
+
+            updateAgentMemory(prompt, content);
+            List<Map<String, Object>> payload = (List<Map<String, Object>>) convertToPayload(content, isCreated);
+
+            // evaluate the agents output before committing
+            List<Map<String, Object>> evaluatedPayload = (List<Map<String, Object>>) evaluateAgentOutput(payload);
 
             // Pass to workflow
-            ResponseStatus updateStatus = performNotebookAction(this.notebookName, payload);
-            return this.handleResponseStatus(updateStatus);
+            return performNotebookAction(this.notebookName, evaluatedPayload);
         } catch (Exception e) {
             log.error("Error reading preprocessing cells from LLM", e);
             return getResponseStatusError(e);
@@ -137,23 +148,58 @@ public class AgentServiceImpl implements AgentService {
         );
 
         try {
-            Object payload = getPayloadFromLLM(prompt.getContents(), isCreated);
+            String content = getContentFromLLM(prompt.getContents());
+            updateAgentMemory(prompt.getContents(), content);
 
-            ResponseStatus updateStatus = performNotebookAction(notebookName, payload);
-            return this.handleResponseStatus(updateStatus);
+            Object payload = convertToPayload(content, isCreated);
+
+            return performNotebookAction(notebookName, payload);
         } catch (Exception e) {
             log.error("Error reading content from LLM {}", e.getMessage());
         }
         return null;
     }
 
-    private Object getPayloadFromLLM(String prompt, Boolean isUpdatingNotebook) {
-        String notebookContent = chatClient
+    private CriticResult mlCriticAgent(String agentOutput) {
+        log.info("MLCriticAgent: Critiquing Agent Last Output");
+
+        Prompt prompt = ML_CRITIC_PROMPT.create(
+                Map.of("agent_output", agentOutput)
+        );
+
+        String content = getContentFromLLM(prompt.getContents());
+
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readValue(content, CriticResult.class);
+        } catch (Exception e) {
+            log.error("Error converting critic result to JSON {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private Object codeFixerAgent(String originalCode, String criticFeedback) {
+        log.info("Fixing code with feedback from critic");
+        Prompt prompt = CODE_FIXER_PROMPT.create(
+                Map.of(
+                        "original_code", originalCode,
+                        "critic_feedback", criticFeedback
+                )
+        );
+
+        String content = getContentFromLLM(prompt.getContents());
+        return Util.getJsonFromListContent(content);
+    }
+
+    private String getContentFromLLM(String prompt) {
+        return chatClient
                 .prompt(prompt)
                 .call()
                 .content();
+    }
 
-        if (notebookContent == null || notebookContent.isBlank()) {
+    private Object convertToPayload(String content, boolean isUpdatingNotebook) {
+        if (content == null || content.isBlank()) {
             log.error("Empty response from LLM during preprocessing cell generation");
             return ResponseStatus.builder()
                     .status("Failure")
@@ -162,11 +208,9 @@ public class AgentServiceImpl implements AgentService {
                     .build();
         }
 
-        updateAgentMemory(prompt, notebookContent);
-
         // if not updating, create the notebook
         if (!isUpdatingNotebook) {
-            Map<String, Object> payload = Util.getJsonFromContent(notebookContent);
+            Map<String, Object> payload = Util.getJsonFromContent(content);
 
             // if payload is already wrapped, don't wrap twice.
             if (!payload.containsKey("notebook_content"))
@@ -174,7 +218,7 @@ public class AgentServiceImpl implements AgentService {
             return payload;
         } else {
             // update the notebook
-            return Util.getJsonFromListContent(notebookContent);
+            return Util.getJsonFromListContent(content);
         }
     }
 
@@ -194,6 +238,21 @@ public class AgentServiceImpl implements AgentService {
         }
 
         return getResponseStatusError(new Exception("Error performing notebook action"));
+    }
+
+    private Object evaluateAgentOutput(Object agentOutput) {
+        log.info("Evaluating Agent Output");
+        CriticResult criticResult = this.mlCriticAgent(agentOutput.toString());
+        if (criticResult != null && "rejected".equals(criticResult.getStatus())) {
+            log.warn("Code was rejected by critic with feedback: {}", criticResult.getFeedback());
+            Object payload = codeFixerAgent(agentOutput.toString(), criticResult.getFeedback());
+
+            // try the critic again with latest changes
+            return evaluateAgentOutput(payload.toString());
+        }
+
+        log.info("Code was approved by critic");
+        return agentOutput;
     }
 
     private void updateAgentMemory(String userInput, String agentOutput) {
