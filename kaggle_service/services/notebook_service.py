@@ -28,6 +28,9 @@ class NotebookService:
             if isinstance(is_create_successful, Exception):
                 raise Exception(str(tb_str))
         else:
+            # back up the current notebook before appending new data
+            self.backup_notebook()
+
             # append to the notebook
             is_update_complete, tb_str = self.append_cells_to_notebook(content)
             if isinstance(is_update_complete, Exception):
@@ -98,7 +101,8 @@ class NotebookService:
     def test_notebook(self):
         print("Testing notebook execution...")
         
-        notebook_path, _ = self.backup_notebook()
+        #notebook_path, _ = self.backup_notebook()
+        notebook_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}.ipynb"
         notebook_output_path = self.WORKDIR / f"{self.NOTEBOOK_NAME}-output.ipynb"
 
         try:
@@ -112,8 +116,6 @@ class NotebookService:
             tb_str = traceback.format_exc()
             self.revert_notebook()
             return e, tb_str
-
-        self.revert_notebook()
 
         return None, None
 
@@ -213,7 +215,6 @@ class NotebookService:
 
         shutil.copy(notebook_path, backup_path)
         print(f"Backup created at {backup_path}")
-    
     
         return notebook_path, backup_path
     
